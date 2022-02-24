@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    k8s-app: vcuda-test
+    qcloud-app: vcuda-test
+  name: vcuda-test
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: vcuda-test
+  template:
+    metadata:
+      labels:
+        k8s-app: vcuda-test
+        qcloud-app: vcuda-test
+    spec:
+      schedulerName: gpu-scheduler
+      containers:
+      - command:
+        - sleep
+        - 360000s
+        env:
+        - name: PATH
+          value: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        image: menghe.tencentcloudcr.com/public/tensorflow-gputest:0.2
+        imagePullPolicy: IfNotPresent
+        name: tensorflow-test
+        resources:
+          limits:
+            tencent.com/vcuda-core: "50"
+            tencent.com/vcuda-memory: "32"
+          requests:
+            tencent.com/vcuda-core: "50"
+            tencent.com/vcuda-memory: "32"

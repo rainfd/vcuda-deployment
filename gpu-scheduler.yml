@@ -1,0 +1,133 @@
+---
+apiVersion: v1
+data:
+  policy.cfg: |
+    {
+      "kind": "Policy",
+      "apiVersion": "v1",
+      "predicates": [
+        {
+          "name": "PodFitsHostPorts"
+        },
+        {
+          "name": "PodFitsResources"
+        },
+        {
+          "name": "NoDiskConflict"
+        },
+        {
+          "name": "MatchNodeSelector"
+        },
+        {
+          "name": "HostName"
+        }
+      ],
+      "extenders": [
+        {
+          "urlPrefix": "http://gpu-quota-admission:3456/scheduler",
+          "apiVersion": "v1beta1",
+          "filterVerb": "predicates",
+          "enableHttps": false,
+          "nodeCacheCapable": false
+        }
+      ],
+      "hardPodAffinitySymmetricWeight": 10,
+      "alwaysCheckAllPredicates": false
+    }
+kind: ConfigMap
+metadata:
+  name: gpu-scheduler-config
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    component: scheduler
+    tier: control-plane
+  name: gpu-scheduler
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        component: scheduler
+        tier: control-plane
+    spec:
+      containers:
+      - command:
+        - kube-scheduler
+        - --address=127.0.0.1
+        - --kubeconfig=/etc/kubernetes/kube-scheduler.kubeconfig
+        - --leader-elect=false
+        - --logtostderr=true
+        - --port=10151
+        - --secure-port=10149
+        - --scheduler-name=gpu-scheduler
+        - --policy-configmap=gpu-scheduler-config
+        image: kubeimage/kube-scheduler-amd64:v1.18.3
+        imagePullPolicy: IfNotPresent
+        name: kube-scheduler
+        resources:
+          requests:
+            cpu: 100m
+        volumeMounts:
+        - mountPath: /etc/kubernetes/kube-scheduler.kubeconfig
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /etc/localtime
+          name: localtime
+          readOnly: true
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      serviceAccountName: admin-user
+      volumes:
+      - hostPath:
+          path: /etc/kubernetes/kube-scheduler.kubeconfig
+          type: File
+        name: kubeconfig
+      - hostPath:
+          path: /etc/localtime
+          type: ""
+        name: localtime
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gpu-scheduler
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - gpu-scheduler-config
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gpu-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gpu-scheduler
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: system:kube-scheduler
+- kind: ServiceAccount
+  name: kube-scheduler
+  namespace: kube-system
